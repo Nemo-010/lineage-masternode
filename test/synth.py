@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tarfile
 
 META = ".fission-artifact.json"
@@ -20,14 +21,27 @@ LOG = ".fission-ninja-log"
 
 NINJA_RULES = """\
 rule cc
-  command = cat $in > $out
+  command = {join} $out $in
 rule ar
-  command = cat $in > $out
+  command = {join} $out $in
 rule install
-  command = cp $in $out
+  command = {join} $out $in
 rule img
-  command = cat $in > $out
+  command = {join} $out $in
 """
+
+
+def ninja_rules() -> str:
+    """The same rules on every platform, including Windows.
+
+    `cat` and `cp` do not exist there, so the fixture's commands are a Python
+    helper invoked with this interpreter. The command line is what ninja hashes
+    into its log, so it must be identical for the build and for the later
+    "is this tree up to date" check -- both happen on the same machine and with
+    the same interpreter, which is exactly the situation here.
+    """
+    join = f'"{sys.executable}" "{os.path.join(os.path.dirname(os.path.abspath(__file__)), "copyjoin.py")}"'
+    return NINJA_RULES.format(join=join)
 
 
 def _write(path: str, data: str, mtime_ns: int) -> None:
@@ -57,7 +71,7 @@ def build_tree(root: str, modules: int = 6, seed: int = 5, use_ninja: bool = Tru
     tree is actually built here when ninja is available.
     """
     os.makedirs(root, exist_ok=True)
-    lines = [NINJA_RULES]
+    lines = [ninja_rules()]
     installs = []
     sources = []
     base = 1_700_000_000_000_000_000
