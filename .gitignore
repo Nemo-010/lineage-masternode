@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# scratch from demo/run_demo.py
+.mn-demo/
+incoming/
+tree/
