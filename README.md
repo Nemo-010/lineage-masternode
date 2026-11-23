@@ -18,7 +18,7 @@ That builds a synthetic fleet (three shards, real tars, real hashes, a real
 fetch → verify → merge → freshen → report, ending with a ninja run that must
 have nothing to do. Expect ~1 second and `pending edges: 0`.
 
-    python3 -m unittest discover -s test      # 23 tests
+    python3 -m unittest discover -s test      # 26 tests
 
 ## Running it for real
 
@@ -128,14 +128,25 @@ Written for Windows as well as POSIX, because the machine may be WSL or native:
   the REST API with `urllib`, and the ninja graph is parsed by this repo.
 - Atomic `os.replace`, no `fcntl`, no `fork`.
 
-The Windows logic is tested by flipping the platform flag
-(`test/test_windows.py`): long-path prefixing, UNC shares, already-prefixed
-paths, and a symlink member being skipped and counted instead of killing the
-merge. Writing those tests found two real bugs — `abspath()` was mangling UNC
-paths, and unclaimed symlink members were being dropped silently.
+The Windows logic is exercised twice: by flipping the platform flag
+(`test/test_windows.py`) so long-path prefixing, UNC shares, already-prefixed
+paths and symlink-member handling run anywhere, and by the suite itself on a
+`windows-latest` runner, where the demo finishes with `pending edges: 0`.
+Writing those tests found two real bugs (`abspath()` mangling UNC paths, and
+unclaimed symlink members being dropped silently); running them on Windows
+found three more that no amount of flag-flipping could have shown:
 
-What is *not* proven: this has not been executed on Windows itself. The logic
-is exercised, the platform is not.
+| What Windows showed | Why |
+|---|---|
+| the merged tree arrived **empty** | the fixture described paths with the platform separator, so the manifest said `out\obj\x.o` and `.ninja_log` said `out/obj/x.o`; nothing matched. Paths are normalised at merge's edges now. |
+| `merge` said **"no artifacts matched"** with the tars present | `--artifact` went through `shlex.split`, and POSIX shlex eats backslashes: `C:\Users\me\shard-*.tar` became `C:Usersmeshards-*.tar`. |
+| every freshen test died at `cat` | the fixture's build commands were `cat`/`cp`. They are a Python helper now. |
+
+What is still *not* proven: it has not run on the machine it is for — a 30 GB
+WSL box pulling real shard tars from a real LineageOS run. Every step has been
+run, on Windows, macOS and Linux, against artifacts that are real tars with
+real hashes and a real ninja log; the fleet that produces them is still
+synthesised.
 
 ## Measured run
 
@@ -172,9 +183,10 @@ differences, same `# ninja log v6` header.
 
 ## Tests
 
-    python3 -m unittest discover -s test -v      # 23 tests
+    python3 -m unittest discover -s test -v      # 26 tests
 
-Covers: the Windows path/symlink paths, resume after a connection dies mid-body (and that the resumed request
+Covers: the Windows path and symlink paths, `\` vs `/` in artifacts and
+patterns, resume after a connection dies mid-body (and that the resumed request
 actually sent a `Range` header), retry after 503, permanent failure reported
 rather than hidden, checksum mismatch refused and deleted, merge dedupe vs
 collision-with-owner, artifact without metadata rejected, dependency-cycle
@@ -219,5 +231,5 @@ All were found by building this, and each one would waste the one attempt:
     mn/freshen.py       mtime reconciliation + log rewrite
     mn/doctor.py        what this machine can honestly do
     mn/cli.py           subcommands
-    test/               23 tests + the synthetic fleet
+    test/               26 tests + the synthetic fleet
     demo/run_demo.py    the measured run above
