@@ -19,8 +19,12 @@ from mn import util  # noqa: E402
 
 class WindowsPaths(unittest.TestCase):
     def test_short_path_is_untouched(self):
+        # Built from this platform's root: "/build/..." is not absolute on
+        # Windows, and the point of the test is the 260-char prefix, not
+        # abspath's drive handling.
+        p = os.path.join(os.path.abspath(os.sep), "build", "lineage", "out")
         with mock.patch.object(util, "WIN", True):
-            self.assertEqual(util.long_path("/build/lineage/out"), os.path.abspath("/build/lineage/out"))
+            self.assertEqual(util.long_path(p), os.path.abspath(p))
 
     def test_long_path_gets_the_prefix(self):
         deep = "/build/lineage/" + "/".join(["out"] + ["deep_component_name"] * 12)

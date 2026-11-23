@@ -75,26 +75,52 @@ def cmd_verify(args) -> int:
     return 0
 
 
+def _split_patterns(text: str) -> list[str]:
+    """Split on unquoted whitespace, and never treat `\\` as an escape.
+
+    shlex.split() is what this replaced: it is POSIX, so it eats Windows
+    separators (`C:\\a\\b` -> `C:ab`) and a quoted path with a space in it is
+    the only thing it was actually needed for.
+    """
+    tokens: list[str] = []
+    cur: list[str] = []
+    quote: str | None = None
+    for ch in text:
+        if quote:
+            if ch == quote:
+                quote = None
+            else:
+                cur.append(ch)
+        elif ch in "\"'":
+            quote = ch
+        elif ch.isspace():
+            if cur:
+                tokens.append("".join(cur))
+                cur = []
+        else:
+            cur.append(ch)
+    if cur:
+        tokens.append("".join(cur))
+    return tokens
+
+
 def _artifact_paths(pattern: str) -> list[str]:
     """Expand one --artifact argument into artifact paths.
 
     Kept away from shlex on Windows on purpose: shlex.split() is POSIX, where a
     backslash is an escape, so it turns `C:\\Users\\me\\shard-*.tar` into
     `C:Usersmeshards-*.tar` -- a glob that matches nothing and a masternode that
-    reports "no artifacts matched" with the files sitting right there. Shells
-    already split words; the only case that needs a splitter is one quoted
-    argument holding several patterns, which is a POSIX shell habit anyway.
+    reports "no artifacts matched" with the files sitting right there.
     """
-    import shlex
-
     hits = sorted(glob.glob(pattern))
     if hits:
         return hits
     if os.path.exists(pattern):
         return [pattern]
-    if os.name != "nt" and (" " in pattern or "'" in pattern or '"' in pattern):
+    tokens = _split_patterns(pattern)
+    if len(tokens) > 1:
         found: list[str] = []
-        for token in shlex.split(pattern):
+        for token in tokens:
             found.extend(sorted(glob.glob(token)) or ([token] if os.path.exists(token) else []))
         if found:
             return found
