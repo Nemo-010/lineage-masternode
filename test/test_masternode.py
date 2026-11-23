@@ -270,6 +270,64 @@ class MasternodeFlow(unittest.TestCase):
         return stale
 
 
+class PathSeparators(unittest.TestCase):
+    """Windows hands out `\\`, ninja and .ninja_log speak `/`.
+
+    Both defects here shipped once and were found by running the suite on a
+    windows-latest runner: the artifact merge wrote nothing because the manifest
+    said `out\\obj\\x.o` while the log said `out/obj/x.o`, and --artifact ate
+    the separators before glob saw them.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="mn-sep-")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_merge_writes_backslashed_artifact_paths_where_ninja_expects(self):
+        import io
+        import tarfile
+
+        tar_path = os.path.join(self.tmp, "w0.tar")
+        meta = {
+            "worker": "w0",
+            "files": [{
+                "path": "out\\obj\\m\\s.o", "size": 3, "sha256": "0" * 64,
+                "mode": 0o644, "mtime_ns": 1_700_000_000_000_000_000,
+            }],
+            "owners": {"out\\obj\\m\\s.o": "w0"},
+            "ninja_log_header": "# ninja log v6",
+        }
+        with tarfile.open(tar_path, "w") as tf:
+            payload = b"obj\n"
+            ti = tarfile.TarInfo("out\\obj\\m\\s.o")
+            ti.size = len(payload)
+            tf.addfile(ti, io.BytesIO(payload))
+            blob = json.dumps(meta).encode()
+            mt = tarfile.TarInfo(".fission-artifact.json")
+            mt.size = len(blob)
+            tf.addfile(mt, io.BytesIO(blob))
+
+        report = merge.merge([tar_path], os.path.join(self.tmp, "tree"))
+        self.assertEqual(report.written, 1, json.dumps(report.as_dict()))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, "tree", "out", "obj", "m", "s.o")))
+
+    def test_artifact_pattern_keeps_its_backslashes(self):
+        """shlex.split() would turn a Windows path into a path that matches nothing."""
+        pattern = "C:\\Users\\someone\\shard-*.tar"
+        self.assertEqual(cli._artifact_paths(pattern), [pattern])
+
+    def test_several_patterns_in_one_quoted_argument_still_work(self):
+        names = []
+        for name in ("a.tar", "b.tar"):
+            full = os.path.join(self.tmp, name)
+            open(full, "wb").close()
+            names.append(full)
+        got = cli._artifact_paths(" ".join(f'"{n}"' for n in names))
+        self.assertEqual(sorted(got), sorted(names))
+
+
 class CrossPlatform(unittest.TestCase):
     def test_long_path_helper_is_a_noop_off_windows(self):
         if os.name == "nt":

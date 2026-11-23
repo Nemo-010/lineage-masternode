@@ -122,7 +122,7 @@ def build_tree(root: str, modules: int = 6, seed: int = 5, use_ninja: bool = Tru
         "installs": installs,
         "sources": sorted(sources),
         "all_outputs": sorted(
-            os.path.relpath(os.path.join(dp, f), root)
+            os.path.relpath(os.path.join(dp, f), root).replace(os.sep, "/")
             for dp, _dn, fs in os.walk(os.path.join(root, "out"))
             for f in fs
         ),

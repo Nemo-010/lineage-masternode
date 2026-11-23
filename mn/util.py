@@ -94,6 +94,17 @@ def human(n: float) -> str:
     return f"{n:3.1f} PiB"
 
 
+def posix_rel(path: str) -> str:
+    """A tree-relative path with forward slashes, on every platform.
+
+    Ninja, `.ninja_log` and the artifact manifest all speak with `/`. Windows
+    hands out `\\`, so anything that travels between the two -- an archive's
+    member names, an ownership list, a log entry -- has to be normalised once,
+    at the edge, or nothing matches and the tree arrives empty.
+    """
+    return path.replace("\\", "/")
+
+
 def load_json(path: str) -> dict:
     with open_any(path, "r") as fh:
         return json.load(fh)

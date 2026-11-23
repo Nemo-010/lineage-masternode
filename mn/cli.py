@@ -75,13 +75,36 @@ def cmd_verify(args) -> int:
     return 0
 
 
+def _artifact_paths(pattern: str) -> list[str]:
+    """Expand one --artifact argument into artifact paths.
+
+    Kept away from shlex on Windows on purpose: shlex.split() is POSIX, where a
+    backslash is an escape, so it turns `C:\\Users\\me\\shard-*.tar` into
+    `C:Usersmeshards-*.tar` -- a glob that matches nothing and a masternode that
+    reports "no artifacts matched" with the files sitting right there. Shells
+    already split words; the only case that needs a splitter is one quoted
+    argument holding several patterns, which is a POSIX shell habit anyway.
+    """
+    import shlex
+
+    hits = sorted(glob.glob(pattern))
+    if hits:
+        return hits
+    if os.path.exists(pattern):
+        return [pattern]
+    if os.name != "nt" and (" " in pattern or "'" in pattern or '"' in pattern):
+        found: list[str] = []
+        for token in shlex.split(pattern):
+            found.extend(sorted(glob.glob(token)) or ([token] if os.path.exists(token) else []))
+        if found:
+            return found
+    return [pattern]
+
+
 def cmd_merge(args) -> int:
     tars = []
     for pattern in args.artifact:
-        import shlex
-
-        for token in shlex.split(pattern):
-            tars.extend(sorted(glob.glob(token)) or ([token] if os.path.exists(token) else []))
+        tars.extend(_artifact_paths(pattern))
     if not tars:
         _fail("no artifacts matched")
     ownership = mergemod.load_ownership(args.ownership_dir) if args.ownership_dir else {}

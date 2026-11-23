@@ -77,7 +77,14 @@ def _meta_of(tar_path: str) -> dict:
             raise MergeError(f"{tar_path}: empty {META}")
         import json
 
-        return json.loads(fh.read().decode("utf-8", "replace"))
+        meta = json.loads(fh.read().decode("utf-8", "replace"))
+    # Archives built on Windows can carry `\` in member names and manifest
+    # paths; every consumer of this tree (ninja, the log) speaks `/`.
+    for rec in meta.get("files", []):
+        rec["path"] = util.posix_rel(rec["path"])
+    if "owners" in meta:
+        meta["owners"] = {util.posix_rel(k): v for k, v in meta["owners"].items()}
+    return meta
 
 
 def _log_entries(tar_path: str) -> list[str]:
@@ -124,14 +131,14 @@ def load_ownership(directory: str) -> dict[str, str]:
             for line in fh:
                 line = line.strip()
                 if line:
-                    owner[line] = worker
+                    owner[util.posix_rel(line)] = worker
     return owner
 
 
 def merge(tars: list[str], dest: str, ownership: dict[str, str] | None = None) -> Report:
     if not tars:
         raise MergeError("no artifacts given")
-    ownership = ownership or {}
+    ownership = {util.posix_rel(k): v for k, v in (ownership or {}).items()}
     metas = [(t, _meta_of(t)) for t in tars]
 
     claims: dict[str, list[tuple[str, str]]] = {}
@@ -186,6 +193,7 @@ def merge(tars: list[str], dest: str, ownership: dict[str, str] | None = None) -
             for member in tf:
                 if member.name in (META, LOG):
                     continue
+                member.name = util.posix_rel(member.name)
                 is_link = member.issym() or member.islnk()
                 if member.name not in wanted or member.name in written:
                     # A link nobody claimed is worth counting: it means the
