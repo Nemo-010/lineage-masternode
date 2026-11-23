@@ -62,6 +62,10 @@ def main() -> int:
     ap.add_argument("--keep", action="store_true", help="keep the scratch directory")
     ap.add_argument("--shards", type=int, default=3, choices=(1, 2, 3))
     ap.add_argument(
+        "--budget-gb", type=float, default=BUDGET_GB,
+        help="the storage budget to ask doctor about (default: 30)",
+    )
+    ap.add_argument(
         "--scratch",
         help="where to build the demo (default: a directory next to this repo, "
              "because /tmp is often a small tmpfs and doctor would rightly refuse)",
@@ -73,7 +77,7 @@ def main() -> int:
     os.makedirs(parent, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="run-", dir=parent)
     started = time.time()
-    print(f"masternode demo   scratch={tmp}   budget={BUDGET_GB:.0f} GB")
+    print(f"masternode demo   scratch={tmp}   budget={args.budget_gb:.0f} GB")
 
     step(0, "fleet: build shards (synthesised, but real tars and real hashes)")
     source = os.path.join(tmp, "fleet-tree")
@@ -110,10 +114,22 @@ def main() -> int:
     print(f"    SHA256SUMS: {len(open(sums).read().splitlines())} entries")
 
     step(1, "masternode doctor")
-    assets_gb = sum(os.path.getsize(os.path.join(release, f)) for f in os.listdir(release)) / 1e9
-    code, out = cli("doctor", "--root", tmp, "--budget-gb", str(BUDGET_GB), "--assets-gb", str(assets_gb))
+    asset_bytes = sum(os.path.getsize(os.path.join(release, f)) for f in os.listdir(release))
+    assets_gb = asset_bytes / 1e9
+    code, out = cli("doctor", "--root", tmp, "--budget-gb", str(args.budget_gb), "--assets-gb", str(assets_gb))
     print(out)
-    assert code == 0, "doctor said this machine cannot do anything"
+    if code != 0:
+        # Not a pipeline failure: doctor is doing its job on a scratch disk that
+        # is smaller than the budget. Say which disk, and keep going, because
+        # the demo's own artifacts are kilobytes.
+        free = shutil.disk_usage(tmp).free
+        print(
+            f"\n    doctor answered no: {util.human(free)} free under {tmp} is less\n"
+            f"    than the {args.budget_gb:.0f} GB budget, so no mode is possible there. That\n"
+            f"    is the honest answer. This demo's artifacts are {util.human(asset_bytes)}, so the\n"
+            f"    pipeline below still runs; use --scratch DIR on a bigger disk to see\n"
+            f"    doctor agree, or --budget-gb to ask about a budget you actually have."
+        )
 
     step(2, "masternode fetch")
     incoming = os.path.join(tmp, "incoming")

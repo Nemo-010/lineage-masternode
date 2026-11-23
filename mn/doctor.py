@@ -106,10 +106,15 @@ def inspect(root: str, budget_gb: float, assets_gb: float = 0.0) -> Report:
 
 
 def render(report: Report) -> str:
+    note = ""
+    if report.budget_gb:
+        note = f"  (budget {report.budget_gb:.0f} GB"
+        if report.free_gb < report.budget_gb:
+            note += f", capped at the {report.free_gb:.1f} GB actually free"
+        note += ")"
     lines = [
         f"platform   {report.platform}",
-        f"disk       {report.free_gb:.1f} GB free of {report.total_gb:.1f} GB"
-        + (f"  (budget {report.budget_gb:.0f} GB)" if report.budget_gb else ""),
+        f"disk       {report.free_gb:.1f} GB free of {report.total_gb:.1f} GB" + note,
         f"memory     {report.ram_gb:.1f} GB",
     ]
     for m in report.modes:
